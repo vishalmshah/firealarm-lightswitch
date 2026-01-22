@@ -2,6 +2,8 @@
 // via RESTful API endpoints. It uses the 'tplink-smarthome-api' library to
 // communicate with the bulb and 'express' to create the webserver.
 
+// Debug this with "curl -X POST http://localhost:SERVER_PORT/ENDPOINT"
+
 const express = require('express');
 const { Client } = require('tplink-smarthome-api');
 
@@ -109,6 +111,55 @@ app.post('/set-brightness', async (req, res) => {
     } catch (error) {
         console.error('Failed to communicate with the Kasa bulb:', error.message);
         res.status(500).send({ status: 'error', message: error.message });
+    }
+});
+
+// Toggles light between OFF and ON
+app.post('/toggle-light', async (req, res) => {
+    try {
+        const device = await client.getDevice({ host: BULB_IP });
+        const sysInfo = await device.getSysInfo();
+
+        // Check the current power state
+        // 1 = On, 0 = Off
+        const currentState = sysInfo.light_state.on_off;
+
+        await device.setPowerState(!currentState);
+        console.log(`Toggle: Turning bulb ${currentState === 1 ? 'OFF' : 'ON'}`);
+        res.json({ status: 'success', state: 'off' });
+    } catch (error) {
+        console.error('Toggle failed:', error.message);
+        res.status(500).json({ status: 'error', message: 'Communication error' });
+    }
+});
+
+// Toggles light between OFF and 100% brightness
+app.post('/toggle-light-bright', async (req, res) => {
+    try {
+        const device = await client.getDevice({ host: BULB_IP });
+        const sysInfo = await device.getSysInfo();
+
+        // Check the current power state
+        // 1 = On, 0 = Off
+        const currentState = sysInfo.light_state.on_off;
+
+        if (currentState === 1) {
+            // If it's ON, turn it OFF
+            await device.setPowerState(false);
+            console.log('Toggle (bright): Turning bulb OFF');
+            res.json({ status: 'success', state: 'off' });
+        } else {
+            // If it's OFF, turn it ON at 100% brightness
+            await device.lighting.setLightState({
+                on_off: true,
+                brightness: 100
+            });
+            console.log('Toggle (bright): Turning bulb ON to 100%');
+            res.json({ status: 'success', state: 'on', brightness: 100 });
+        }
+    } catch (error) {
+        console.error('Toggle failed:', error.message);
+        res.status(500).json({ status: 'error', message: 'Communication error' });
     }
 });
 
