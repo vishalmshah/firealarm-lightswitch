@@ -165,5 +165,4 @@ app.post('/toggle-light-bright', async (req, res) => {
 
 app.listen(SERVER_PORT, () => {
     console.log(`Webserver listening on port ${SERVER_PORT}`);
-    console.log(`To trigger the bulb, send a POST request to: TODO`);
 });
