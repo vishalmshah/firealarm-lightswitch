@@ -5,10 +5,11 @@ const axios = require('axios');
 const GPIO_PIN = 16;
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
 const FIRE_ALARM_ENDPOINT = '/toggle-light-bright';
+const DEBOUNCE_TIME = 1000; // ms - ignore alerts within 1 second of last trigger
 // ---------------------
 
 let alarmSwitch;
-let previousState = 0;let hasTriggered = false; // Flag to prevent multiple triggers during a single press
+let lastTriggerTime = 0;
 /**
  * Trigger the fire alarm endpoint on the server
  */
@@ -36,20 +37,14 @@ function startListening() {
     
     // Watch for rising edge (LOW to HIGH transition only)
     alarmSwitch.on('alert', (level, tick) => {
-        // Rising edge: transition from LOW (0) to HIGH (1)
-        if (previousState === 0 && level === 1) {
-            if (!hasTriggered) {
-                console.log('📍 Rising edge detected!');
-                triggerAlarm();
-                hasTriggered = true; // Prevent multiple triggers during this press
-            }
+        const now = Date.now();
+        
+        // Only trigger if enough time has passed since last trigger (debounce)
+        if (level === 1 && now - lastTriggerTime > DEBOUNCE_TIME) {
+            console.log('📍 Rising edge detected!');
+            lastTriggerTime = now;
+            triggerAlarm();
         }
-        // Falling edge: transition from HIGH (1) to LOW (0)
-        else if (previousState === 1 && level === 0) {
-            console.log('📍 Switch released');
-            hasTriggered = false; // Reset flag when switch is released
-        }
-        previousState = level;
     });
 }
 
