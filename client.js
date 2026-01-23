@@ -4,27 +4,16 @@ const axios = require('axios');
 // --- CONFIGURATION ---
 const GPIO_PIN = 16;
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
-const FIRE_ALARM_ENDPOINT = '/toggle-light-bright';
-const DEBOUNCE_TIME = 500; // ms - prevent multiple triggers from noise
+const FIRE_ALARM_ENDPOINT = '/fire-alarm-trigger';
 // ---------------------
 
-let lastTriggerTime = 0;
 let alarmSwitch;
+let previousState = 0;
 
 /**
  * Trigger the fire alarm endpoint on the server
  */
 async function triggerAlarm() {
-    const now = Date.now();
-    
-    // Debounce: ignore if triggered within DEBOUNCE_TIME ms
-    if (now - lastTriggerTime < DEBOUNCE_TIME) {
-        console.log('⏭️  Ignoring duplicate trigger (debounce)');
-        return;
-    }
-    
-    lastTriggerTime = now;
-    
     try {
         console.log('🚨 FIRE ALARM TRIGGERED! Sending signal to server...');
         
@@ -46,12 +35,14 @@ async function triggerAlarm() {
 function startListening() {
     console.log(`\n👂 Listening for fire alarm on GPIO pin ${GPIO_PIN}...\n`);
     
-    // Watch for rising edge (LOW to HIGH transition)
+    // Watch for rising edge (LOW to HIGH transition only)
     alarmSwitch.on('alert', (level, tick) => {
-        // level 1 = HIGH
-        if (level === 1) {
+        // Only trigger on transition from LOW (0) to HIGH (1)
+        if (previousState === 0 && level === 1) {
+            console.log('📍 Rising edge detected!');
             triggerAlarm();
         }
+        previousState = level;
     });
 }
 
