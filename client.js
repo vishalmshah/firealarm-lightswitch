@@ -3,7 +3,7 @@ const axios = require('axios');
 
 // Initialize GPIO 17 as an input, watching for "both" rising and falling edges
 // 'pullUp' ensures the pin is at 3.3V when the switch is open
-const alarmSwitch = new Gpio(17, 'in', 'both', { debounceTimeout: 50 });
+const alarmSwitch = new Gpio(16, 'in', 'both', { debounceTimeout: 50 });
 
 // This is the URL to the Kasa server endpoint
 const SERVER_URL = 'http://localhost:3000';
@@ -16,7 +16,7 @@ alarmSwitch.watch(async (err, value) => {
         console.error('GPIO Error:', err);
         return;
     }
-    
+
     console.log(value)
 
     // In a Pull-Up configuration, 0 means the switch is pressed (connected to GND)
