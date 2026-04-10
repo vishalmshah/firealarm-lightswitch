@@ -11,18 +11,23 @@ const DEBOUNCE_TIME = 1000; // ms — ignore repeated triggers within this windo
 let alarmSwitch;
 let lastTriggerTime = 0;
 
-async function triggerAlarm() {
-    try {
-        console.log('Fire alarm triggered! Sending signal to server...');
+async function triggerAlarm(retries = 3) {
+    console.log('Fire alarm triggered! Sending signal to server...');
 
-        const response = await axios.post(`${SERVER_URL}${FIRE_ALARM_ENDPOINT}`, {}, { timeout: 5000 });
-
-        console.log(`Server responded: ${response.data.message}`);
-        console.log(`Power state: ${response.data.power_state ? 'ON' : 'OFF'}`);
-    } catch (error) {
-        console.error(`Failed to reach server: ${error.message}`);
-        console.error(`Make sure the server is running at ${SERVER_URL}`);
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const response = await axios.post(`${SERVER_URL}${FIRE_ALARM_ENDPOINT}`, {}, { timeout: 5000 });
+            console.log(`Server responded: power_state=${response.data.power_state ? 'ON' : 'OFF'}`);
+            return;
+        } catch (error) {
+            console.error(`Attempt ${attempt}/${retries} failed: ${error.message}`);
+            if (attempt < retries) {
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
     }
+
+    console.error(`All ${retries} attempts failed. Make sure the server is running at ${SERVER_URL}`);
 }
 
 function startListening() {
@@ -63,6 +68,8 @@ function main() {
             pullUpDown: Gpio.PUD_DOWN,
             alert: true,
         });
+        // Filter out glitches shorter than 10ms (hardware noise / contact bounce)
+        alarmSwitch.glitchFilter(10000);
 
         console.log(`GPIO pin ${GPIO_PIN} initialized (pull-down, HIGH = triggered)`);
         startListening();

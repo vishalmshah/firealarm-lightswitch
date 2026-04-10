@@ -17,17 +17,34 @@ const SERVER_PORT = 3000;
 
 app.use(express.json());
 
+// Cached device connection and last known state to avoid redundant network calls.
+// cachedLightState: null = unknown (will query bulb), true = on, false = off
+let cachedDevice = null;
+let cachedLightState = null;
+
+async function getDevice() {
+    if (!cachedDevice) {
+        cachedDevice = await client.getDevice({ host: BULB_IP });
+    }
+    return cachedDevice;
+}
+
+function invalidateDevice() {
+    cachedDevice = null;
+    cachedLightState = null;
+}
+
 // Gets state of the light
 app.get('/state', async (req, res) => {
     console.log('GET light status');
 
     try {
-        // Connect to the device via its IP
-        const device = await client.getDevice({ host: BULB_IP });
-        
+        const device = await getDevice();
         const sysInfo = await device.getSysInfo();
         const isOn = sysInfo.light_state.on_off === 1;
-        
+
+        cachedLightState = isOn;
+
         console.log(`Successfully acquired bulb state ${BULB_IP}`);
         res.status(200).json({
             status: 'success',
@@ -38,6 +55,7 @@ app.get('/state', async (req, res) => {
         });
     } catch (error) {
         console.error('Failed to communicate with the Kasa bulb:', error.message);
+        invalidateDevice();
         res.status(500).send({ status: 'error', message: error.message });
     }
 });
@@ -47,16 +65,15 @@ app.post('/on', async (req, res) => {
     console.log('POST Lights turning ON');
 
     try {
-        // Connect to the device via its IP
-        const device = await client.getDevice({ host: BULB_IP });
-        
-        // Turn the light ON
+        const device = await getDevice();
         await device.setPowerState(true);
-        
+        cachedLightState = true;
+
         console.log(`Successfully turned ON bulb at ${BULB_IP}`);
-        res.status(200).send({ status: 'success', message: 'Bulb deactivated.' });
+        res.status(200).send({ status: 'success', message: 'Bulb activated.' });
     } catch (error) {
         console.error('Failed to communicate with the Kasa bulb:', error.message);
+        invalidateDevice();
         res.status(500).send({ status: 'error', message: error.message });
     }
 });
@@ -66,16 +83,15 @@ app.post('/off', async (req, res) => {
     console.log('POST Lights turning OFF');
 
     try {
-        // Connect to the device via its IP
-        const device = await client.getDevice({ host: BULB_IP });
-        
-        // Turn the light OFF
+        const device = await getDevice();
         await device.setPowerState(false);
-        
+        cachedLightState = false;
+
         console.log(`Successfully turned OFF bulb at ${BULB_IP}`);
         res.status(200).send({ status: 'success', message: 'Bulb deactivated.' });
     } catch (error) {
         console.error('Failed to communicate with the Kasa bulb:', error.message);
+        invalidateDevice();
         res.status(500).send({ status: 'error', message: error.message });
     }
 });
@@ -88,28 +104,27 @@ app.post('/set-brightness', async (req, res) => {
     const { brightness } = req.body;
     // Brightness must be between 1 and 100
     if (brightness === undefined || brightness < 1 || brightness > 100) {
-        return res.status(400).json({ 
-            status: 'error', 
-            message: 'Please provide a brightness value between 1 and 100.' 
+        return res.status(400).json({
+            status: 'error',
+            message: 'Please provide a brightness value between 1 and 100.'
         });
     }
-    
+
     console.log(`POST Lights turning ON and set to ${brightness}%`);
-    
+
     try {
-        // Connect to the device via its IP
-        const device = await client.getDevice({ host: BULB_IP });
-        
-        // Set the new light state
+        const device = await getDevice();
         await device.lighting.setLightState({
             on_off: true,
             brightness: brightness
         });
+        cachedLightState = true;
 
         console.log(`Successfully turned ON bulb and set to ${brightness}% at ${BULB_IP}`);
-        res.status(200).send({ status: 'success', message: 'Bulb deactivated.' });
+        res.status(200).send({ status: 'success', message: `Bulb set to ${brightness}%.` });
     } catch (error) {
         console.error('Failed to communicate with the Kasa bulb:', error.message);
+        invalidateDevice();
         res.status(500).send({ status: 'error', message: error.message });
     }
 });
@@ -117,18 +132,23 @@ app.post('/set-brightness', async (req, res) => {
 // Toggles light between OFF and ON
 app.post('/toggle-light', async (req, res) => {
     try {
-        const device = await client.getDevice({ host: BULB_IP });
-        const sysInfo = await device.getSysInfo();
+        const device = await getDevice();
 
-        // Check the current power state
-        // 1 = On, 0 = Off
-        const currentState = sysInfo.light_state.on_off;
+        // Use cached state to avoid a getSysInfo() round trip; fall back to querying if unknown
+        if (cachedLightState === null) {
+            const sysInfo = await device.getSysInfo();
+            cachedLightState = sysInfo.light_state.on_off === 1;
+        }
 
-        await device.setPowerState(!currentState);
-        console.log(`Toggle: Turning bulb ${currentState === 1 ? 'OFF' : 'ON'}`);
-        res.json({ status: 'success', state: 'off' });
+        const newState = !cachedLightState;
+        await device.setPowerState(newState);
+        cachedLightState = newState;
+
+        console.log(`Toggle: Turning bulb ${newState ? 'ON' : 'OFF'}`);
+        res.json({ status: 'success', power_state: newState });
     } catch (error) {
         console.error('Toggle failed:', error.message);
+        invalidateDevice();
         res.status(500).json({ status: 'error', message: 'Communication error' });
     }
 });
@@ -136,29 +156,33 @@ app.post('/toggle-light', async (req, res) => {
 // Toggles light between OFF and 100% brightness
 app.post('/toggle-light-bright', async (req, res) => {
     try {
-        const device = await client.getDevice({ host: BULB_IP });
-        const sysInfo = await device.getSysInfo();
+        const device = await getDevice();
 
-        // Check the current power state
-        // 1 = On, 0 = Off
-        const currentState = sysInfo.light_state.on_off;
+        // Use cached state to avoid a getSysInfo() round trip; fall back to querying if unknown
+        if (cachedLightState === null) {
+            const sysInfo = await device.getSysInfo();
+            cachedLightState = sysInfo.light_state.on_off === 1;
+        }
 
-        if (currentState === 1) {
+        if (cachedLightState) {
             // If it's ON, turn it OFF
             await device.setPowerState(false);
+            cachedLightState = false;
             console.log('Toggle (bright): Turning bulb OFF');
-            res.json({ status: 'success', state: 'off' });
+            res.json({ status: 'success', power_state: false });
         } else {
             // If it's OFF, turn it ON at 100% brightness
             await device.lighting.setLightState({
                 on_off: true,
                 brightness: 100
             });
+            cachedLightState = true;
             console.log('Toggle (bright): Turning bulb ON to 100%');
-            res.json({ status: 'success', state: 'on', brightness: 100 });
+            res.json({ status: 'success', power_state: true, brightness: 100 });
         }
     } catch (error) {
         console.error('Toggle failed:', error.message);
+        invalidateDevice();
         res.status(500).json({ status: 'error', message: 'Communication error' });
     }
 });
