@@ -68,8 +68,8 @@ function main() {
             pullUpDown: Gpio.PUD_DOWN,
             alert: true,
         });
-        // Filter out glitches shorter than 10ms (hardware noise / contact bounce)
-        alarmSwitch.glitchFilter(10000);
+        // Explicitly clear any glitch filter left in the pigpio daemon from a previous run
+        alarmSwitch.glitchFilter(0);
 
         console.log(`GPIO pin ${GPIO_PIN} initialized (pull-down, HIGH = triggered)`);
         startListening();
