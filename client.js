@@ -1,33 +1,61 @@
 const { Gpio } = require('pigpio');
-const axios = require('axios');
+const { Client } = require('tplink-smarthome-api');
 
 // --- CONFIGURATION ---
 const GPIO_PIN = 16;
-const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
-const FIRE_ALARM_ENDPOINT = '/toggle-light-bright';
+const BULB_IP = '10.0.0.39';
 const DEBOUNCE_TIME = 1000; // ms — ignore repeated triggers within this window
 // ---------------------
+
+const kasaClient = new Client();
+let cachedDevice = null;
+let cachedLightState = null; // null = unknown, true = on, false = off
 
 let alarmSwitch;
 let lastTriggerTime = 0;
 
-async function triggerAlarm(retries = 3) {
-    console.log('Fire alarm triggered! Sending signal to server...');
+async function getDevice() {
+    if (!cachedDevice) {
+        cachedDevice = await kasaClient.getDevice({ host: BULB_IP });
+    }
+    return cachedDevice;
+}
 
+function invalidateDevice() {
+    cachedDevice = null;
+    cachedLightState = null;
+}
+
+async function toggleBulb(retries = 3) {
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-            const response = await axios.post(`${SERVER_URL}${FIRE_ALARM_ENDPOINT}`, {}, { timeout: 5000 });
-            console.log(`Server responded: power_state=${response.data.power_state ? 'ON' : 'OFF'}`);
+            const device = await getDevice();
+
+            if (cachedLightState === null) {
+                const sysInfo = await device.getSysInfo();
+                cachedLightState = sysInfo.light_state.on_off === 1;
+            }
+
+            if (cachedLightState) {
+                await device.setPowerState(false);
+                cachedLightState = false;
+                console.log('Bulb turned OFF');
+            } else {
+                await device.lighting.setLightState({ on_off: true, brightness: 100 });
+                cachedLightState = true;
+                console.log('Bulb turned ON at 100%');
+            }
             return;
         } catch (error) {
             console.error(`Attempt ${attempt}/${retries} failed: ${error.message}`);
+            invalidateDevice();
             if (attempt < retries) {
                 await new Promise(r => setTimeout(r, 500));
             }
         }
     }
 
-    console.error(`All ${retries} attempts failed. Make sure the server is running at ${SERVER_URL}`);
+    console.error(`All ${retries} attempts failed. Is the bulb reachable at ${BULB_IP}?`);
 }
 
 function startListening() {
@@ -40,7 +68,7 @@ function startListening() {
         if (level === 1 && now - lastTriggerTime > DEBOUNCE_TIME) {
             console.log('Rising edge detected!');
             lastTriggerTime = now;
-            triggerAlarm();
+            toggleBulb();
         }
     });
 }
@@ -59,8 +87,8 @@ function cleanup() {
 }
 
 function main() {
-    console.log('Fire Alarm GPIO Listener Starting...');
-    console.log(`Server URL: ${SERVER_URL}`);
+    console.log('Fire Alarm Starting...');
+    console.log(`Bulb IP: ${BULB_IP}`);
 
     try {
         alarmSwitch = new Gpio(GPIO_PIN, {
@@ -68,7 +96,7 @@ function main() {
             pullUpDown: Gpio.PUD_DOWN,
             alert: true,
         });
-        // Explicitly clear any glitch filter left in the pigpio daemon from a previous run
+        // Clear any glitch filter left in the pigpio daemon from a previous run
         alarmSwitch.glitchFilter(0);
 
         console.log(`GPIO pin ${GPIO_PIN} initialized (pull-down, HIGH = triggered)`);
