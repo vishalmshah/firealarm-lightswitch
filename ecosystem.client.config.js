@@ -5,7 +5,7 @@ module.exports = {
     {
       name: "firealarm",
       script: "./client.js",
-      watch: false,
+      watch: true, // Change when turned off
       exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: "production"

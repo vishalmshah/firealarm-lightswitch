@@ -64,6 +64,8 @@ function startListening() {
     alarmSwitch.on('alert', (level) => {
         const now = Date.now();
 
+        console.log('GPIO alert detected. Level:', level, 'Time since last trigger:', now - lastTriggerTime, 'ms');
+
         // Only trigger on rising edge (LOW → HIGH) with debounce
         if (level === 1 && now - lastTriggerTime > DEBOUNCE_TIME) {
             console.log('Rising edge detected!');
