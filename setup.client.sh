@@ -5,7 +5,18 @@ set -e
 # as a service that starts automatically on boot.
 # Must be run with sudo because pigpio requires root access.
 #
-# Usage: sudo bash setup.client.sh
+# Usage:
+#   sudo bash setup.client.sh           — normal mode
+#   sudo bash setup.client.sh --verbose — enable detailed timing logs
+
+# ---- Parse arguments ----
+VERBOSE=0
+for arg in "$@"; do
+    case $arg in
+        --verbose) VERBOSE=1 ;;
+        *) echo "Unknown argument: $arg"; exit 1 ;;
+    esac
+done
 
 # ---- Must run as root ----
 if [ "$EUID" -ne 0 ]; then
@@ -32,7 +43,7 @@ fi
 
 # ---- Start the process ----
 echo "Starting firealarm with PM2..."
-pm2 start ecosystem.client.config.js
+VERBOSE=$VERBOSE pm2 start ecosystem.client.config.js
 
 # ---- Persist the process list across reboots ----
 echo "Saving PM2 process list..."
