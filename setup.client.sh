@@ -31,6 +31,16 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
+# ---- Disable WiFi power management ----
+# Prevents the Pi Zero W WiFi chip from sleeping, which causes a noticeable
+# delay on the first bulb command after a period of inactivity.
+echo "Disabling WiFi power management..."
+iwconfig wlan0 power off
+# Make it permanent across reboots
+if ! grep -q "iwconfig wlan0 power off" /etc/rc.local; then
+    sed -i 's/^exit 0/iwconfig wlan0 power off\nexit 0/' /etc/rc.local
+fi
+
 # ---- Install dependencies ----
 echo "Installing dependencies..."
 npm install

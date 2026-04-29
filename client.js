@@ -141,6 +141,21 @@ function main() {
         process.exit(1);
     }
 
+    // Keepalive: ping the bulb every 5 minutes to keep the connection warm
+    // and ensure cachedLightState stays in sync
+    setInterval(() => {
+        getDevice()
+            .then(device => device.getSysInfo())
+            .then(sysInfo => {
+                cachedLightState = sysInfo.light_state.on_off === 1;
+                log(`[keepalive] bulb state: ${cachedLightState ? 'ON' : 'OFF'}`);
+            })
+            .catch(error => {
+                console.error(`[keepalive] failed: ${error.message}`);
+                invalidateDevice();
+            });
+    }, 5 * 60 * 1000);
+
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
 }
